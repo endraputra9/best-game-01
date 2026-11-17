@@ -68,9 +68,9 @@ export const COMBO = {
 
 /** Colours of the hollow: deep night blues, ember oranges, foe hues. */
 export const PALETTE = {
-  nightTop: '#0a0e24',
-  nightBottom: '#131034',
-  groundGlow: '#1d1650',
+  nightTop: '#060818',
+  nightBottom: '#1b1142',
+  groundGlow: '#2e1f6e',
   ember: '#ffb347',
   emberCore: '#fff3c4',
   bolt: '#ffd97a',

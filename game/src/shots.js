@@ -1,19 +1,22 @@
-// Screenshot scenes behind ?shot=start|play|end. Each scene steps the real
-// simulation forward from a fresh run at a fixed step, steered by a pilot: a
-// careful one for the play scene (it aims, kites and gathers dew, as a decent
-// player does), a doomed one for the end scene (it flies at the brood and
-// never fires), and a drifting one behind the title. Same seed, same frame.
+// Screenshot scenes behind ?shot=start|play|end|win. Each scene steps the
+// real simulation forward from a fresh run at a fixed step, steered by a
+// pilot: a careful one for the play and win scenes (it aims, kites and
+// gathers dew, as a decent player does), a doomed one for the end scene (it
+// flies at the brood and never fires), and a drifting one behind the title.
+// Same seed, same frame.
 
 import { FIELD, NOVA, STEP } from './config.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
 
 const START_SECONDS = 4;
 /** The play scene searches from here to the cap for a rich, busy frame. */
 const PLAY_SEARCH_FROM = 18;
-const PLAY_SEARCH_TO = 80;
+const PLAY_SEARCH_TO = 120;
 /** The end scene's pilot plays properly this long, then flies at the brood. */
-const END_FIGHT_SECONDS = 15;
+const END_FIGHT_SECONDS = 30;
 const END_LIMIT_SECONDS = 300;
+/** The win scene's pilot plays a whole run; this caps its search for dawn. */
+const WIN_LIMIT_SECONDS = 1500;
 
 /** The nearest living foe to a point, and its distance; null when none. */
 function nearestFoe(state, x, y) {
@@ -121,20 +124,41 @@ function doomedControl(state) {
 export function stageShot(name, world) {
   if (name === 'play') {
     // Play properly, then hold on the first frame where the fight is up
-    // close: a crowd on the field, a stream of bolts in the air, and at
-    // least one foe well inside the Spark's light, plainly visible.
+    // close and varied: a crowd on the field with more than one kind in it,
+    // a stream of bolts in the air, foes well inside the Spark's light,
+    // juice in the air (a burst or a score popup), and light enough left
+    // that the scene glows rather than gutters.
     const from = Math.round(PLAY_SEARCH_FROM / STEP);
     const to = Math.round(PLAY_SEARCH_TO / STEP);
     for (let index = 0; index < to && !world.over; index += 1) {
       world.step(STEP, combatControl(world));
       if (index < from) continue;
       let upClose = 0;
+      const kinds = new Set();
       for (const foe of world.foes) {
+        kinds.add(foe.kind);
         if (Math.hypot(foe.x - world.spark.x, foe.y - world.spark.y) < 205) upClose += 1;
       }
-      if (world.foes.length >= 6 && world.bolts.length >= 3 && upClose >= 1) break;
+      const juicy = world.fx.particles.length >= 5 || world.fx.texts.length >= 1;
+      if (world.foes.length >= 7 && world.bolts.length >= 4 && upClose >= 2
+        && kinds.size >= 2 && world.spark.light >= 35 && juicy) break;
     }
     return { screen: world.over ? SCREEN_OVER : SCREEN_PLAY, best: world.score };
+  }
+  if (name === 'win') {
+    // The careful pilot plays the whole run for real; if dawn breaks, let
+    // the victory ring and burst bloom for a beat before the still.
+    const limit = Math.round(WIN_LIMIT_SECONDS / STEP);
+    for (let index = 0; index < limit && !world.over; index += 1) {
+      world.step(STEP, combatControl(world));
+    }
+    if (world.won) {
+      const bloom = Math.round(0.45 / STEP);
+      for (let index = 0; index < bloom; index += 1) {
+        world.step(STEP, ambientControl(world));
+      }
+    }
+    return { screen: world.won ? SCREEN_WIN : SCREEN_OVER, best: world.score };
   }
   if (name === 'end') {
     // A real run first, so the end screen carries a real score; then the
