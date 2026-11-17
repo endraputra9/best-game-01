@@ -67,6 +67,6 @@ requests.
 - `game/src/shots.js` — the deterministic `?shot=` scenes behind the screenshots
 - `main.ts` — the hand-in program: copies `game/` and `screenshots/` to the
   output directory and writes `dossier.json` with the vendored library
-- `screenshots/` — real renders of the game (title, play, game over)
+- `screenshots/` — real renders of the game (title, play, game over, dawn)
 
 Licensed under the MIT License (see `LICENSE`).
