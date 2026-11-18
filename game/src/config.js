@@ -66,6 +66,20 @@ export const COMBO = {
   maxBonus: 2,
 };
 
+/**
+ * The sky's slow turn toward morning, by wave. The renderer warms the
+ * horizon with these hues as dawnProgress goes 0 → 1 across the ten waves,
+ * so a wave-nine frame visibly differs from a wave-one frame: the night
+ * itself is the progress bar. `tint` is the horizon glow colour, `sun` the
+ * disc that rises on the win screen.
+ */
+export const DAWN = {
+  tint: '#ff9d5c',
+  tintFar: '#b34a6e',
+  sun: '#ffd98c',
+  fog: '190,180,255',
+};
+
 /** Colours of the hollow: deep night blues, ember oranges, foe hues. */
 export const PALETTE = {
   nightTop: '#060818',
@@ -81,6 +95,7 @@ export const PALETTE = {
   husk: '#57c7a3',
   pod: '#8ee06a',
   wraith: '#a8e6ff',
+  shade: '#ff7ad9',
   text: '#f4ead2',
   textDim: '#9d94b8',
   danger: '#ff5d5d',

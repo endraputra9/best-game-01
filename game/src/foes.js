@@ -1,7 +1,9 @@
 // The foes of the Hollow and the wave director that sends them. Each kind is a
 // small bundle of stats plus a movement habit: glooms drift straight in, mites
 // dart, pods creep and split, husks lumber under armour, wraiths strafe and
-// lunge. The director spends each wave's budget over time from the field edges.
+// lunge, and shades — the late-night crescents — slither in on a sine path
+// that makes leading them a small puzzle of its own. The director spends each
+// wave's budget over time from the field edges.
 
 import { FIELD, PALETTE } from './config.js';
 
@@ -25,6 +27,10 @@ export const FOE_TYPES = {
   wraith: {
     radius: 13, hp: 2, speed: 97, score: 120, cost: 3, color: PALETTE.wraith,
     unlockWave: 4,
+  },
+  shade: {
+    radius: 14, hp: 2, speed: 74, score: 110, cost: 2, color: PALETTE.shade,
+    unlockWave: 5,
   },
 };
 
@@ -76,7 +82,7 @@ function edgePoint(rng) {
 /** Pick a kind the wave has unlocked, weighted toward the cheap and common. */
 function pickKind(wave, rng) {
   const open = KIND_NAMES.filter((name) => wave >= FOE_TYPES[name].unlockWave);
-  const weights = open.map((name) => (name === 'gloom' || name === 'mite' ? 5 : name === 'pod' ? 3 : 2));
+  const weights = open.map((name) => (name === 'gloom' || name === 'mite' ? 5 : name === 'pod' || name === 'shade' ? 3 : 2));
   let total = 0;
   for (const weight of weights) total += weight;
   let roll = rng() * total;
@@ -137,6 +143,13 @@ export function steerFoe(state, foe, dt) {
   } else if (foe.kind === 'pod' || foe.kind === 'husk') {
     foe.vx = ux * foe.speed;
     foe.vy = uy * foe.speed;
+  } else if (foe.kind === 'shade') {
+    // A slither: mostly toward the Spark, with a strong sideways sine laid
+    // over it, so the crescent weaves as it closes and a bolt led straight
+    // at it lands behind it.
+    const weave = Math.sin(foe.age * 3.4 + foe.phase) * 0.85;
+    foe.vx = (ux + -uy * weave) * foe.speed;
+    foe.vy = (uy + ux * weave) * foe.speed;
   } else if (foe.kind === 'wraith') {
     foe.dashClock -= dt;
     if (foe.telegraph > 0) {
