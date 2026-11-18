@@ -106,6 +106,7 @@ export class World {
       this.addScore(foe.score, foe.x, foe.y);
       const big = foe.radius >= 18;
       this.fx.burst(foe.x, foe.y, stats.color, big ? 26 : 14, big ? 260 : 200, 3.4, 0.6);
+      if (big) this.fx.shrapnel(foe.x, foe.y, stats.color, 7, 320);
       this.fx.kick(big ? 0.16 : 0.06);
       this.events.push({ type: 'die', big });
       if (stats.splitsInto !== undefined) {
