@@ -1,9 +1,19 @@
 // Sparkhollow's renderer: everything the player sees, drawn on one canvas in
-// logical field coordinates. Night gradient and starfield first, then dew,
-// foes, bolts and the Spark, then particles, then the darkness that the
-// Spark's light pushes back, then the HUD and whichever screen is up.
+// logical field coordinates. Night gradient and starfield first, then the
+// layered rim of the Hollow — ruined towers on the far skyline, two hill
+// ridges, a treeline, drifting fog — then dew, foes, bolts and the Spark,
+// then particles, then the darkness that the Spark's light pushes back,
+// then the HUD and whichever screen is up.
+//
+// What the renderer is for, in one breath: the game is a duel between one
+// small light and a whole dark field, so every layer serves that read. The
+// sky warms almost imperceptibly as the waves pass (the night is the
+// progress bar; by wave nine the horizon is ember-rose), each foe kind is a
+// silhouette you can name at a glance in its own hue, and the Spark's flame
+// is the warmest, brightest thing on the field at all times. Nothing here
+// touches the simulation: it only reads the world and draws it.
 
-import { DAWN_WAVE, FIELD, PALETTE } from './config.js';
+import { DAWN, DAWN_WAVE, FIELD, PALETTE } from './config.js';
 import { FOE_TYPES } from './foes.js';
 import { mulberry32 } from './world.js';
 
@@ -50,6 +60,25 @@ const PINES = Array.from({ length: 9 }, (_, index) => ({
   height: 17 + starRng() * 15,
   width: 9 + starRng() * 5,
 }));
+// Ruined towers on the far skyline, between the stars and the far ridge:
+// broken walls and one leaning spire, the middle distance of the Hollow.
+// They stand still (the world does not scroll) but the fog and the dawn
+// tint move across them, which is what sells the depth.
+const TOWERS = [
+  { x: 96, width: 34, height: 74, broken: 0.35 },
+  { x: 268, width: 24, height: 52, broken: 0.6 },
+  { x: 512, width: 40, height: 92, broken: 0.22 },
+  { x: 706, width: 26, height: 60, broken: 0.5 },
+  { x: 872, width: 30, height: 68, broken: 0.4 },
+];
+// Fog bands: wide, low, translucent drifts that slide slowly across the
+// field on two different clocks, so no two seconds of the night quite
+// match. Drawn inside the background, under everything that fights.
+const FOG_BANDS = [
+  { y: 356, height: 54, pace: 0.021, alpha: 0.05, phase: 0.8 },
+  { y: 452, height: 70, pace: -0.013, alpha: 0.065, phase: 3.4 },
+  { y: 250, height: 40, pace: 0.008, alpha: 0.035, phase: 5.1 },
+];
 // Ember motes for the end screens: they rise on the win, drift down as ash
 // on the loss, always from the same seeded scatter.
 const END_MOTES = Array.from({ length: 26 }, () => ({
@@ -112,14 +141,58 @@ function flamePath(ctx, x, y, width, height, sway) {
   ctx.closePath();
 }
 
-/** The night itself: gradient, moon, ground glow, stars, hills and motes. */
-function drawBackground(ctx, time) {
+/**
+ * One ruined tower: a wall with a bitten-off top and a single dark window.
+ * `base` is the far ridge line it stands on.
+ */
+function drawTower(ctx, tower, base) {
+  const top = base - tower.height;
+  const bite = tower.height * tower.broken;
+  ctx.beginPath();
+  ctx.moveTo(tower.x, base);
+  ctx.lineTo(tower.x, top + bite * 0.4);
+  ctx.lineTo(tower.x + tower.width * 0.3, top + bite);
+  ctx.lineTo(tower.x + tower.width * 0.55, top);
+  ctx.lineTo(tower.x + tower.width * 0.8, top + bite * 0.7);
+  ctx.lineTo(tower.x + tower.width, top + bite * 0.25);
+  ctx.lineTo(tower.x + tower.width, base);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(150,160,230,0.16)';
+  ctx.fillRect(tower.x + tower.width * 0.38, top + tower.height * 0.34, 4.5, 7);
+  ctx.fillStyle = '#0d0a26';
+}
+
+/**
+ * The night itself: gradient, moon, ground glow, stars, the tower skyline,
+ * hills, fog and motes. `dawn` runs 0 → 1 across the ten waves and warms
+ * the horizon: at dawn 0 the field is all blue night; by dawn 1 an
+ * ember-rose band sits on the ridge line and the ground glow warms with
+ * it, so the player's progress is written on the sky itself.
+ */
+function drawBackground(ctx, time, dawn) {
   const gradient = ctx.createLinearGradient(0, 0, 0, FIELD.height);
   gradient.addColorStop(0, PALETTE.nightTop);
   gradient.addColorStop(0.55, '#100c2e');
   gradient.addColorStop(1, PALETTE.nightBottom);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+  if (dawn > 0.01) {
+    // Dawn's promise on the horizon: a low warm band behind the ridges,
+    // strongest at the centre of the field, where the sun will rise.
+    const horizon = ctx.createRadialGradient(
+      FIELD.width / 2, FIELD.height + 60, 60,
+      FIELD.width / 2, FIELD.height + 60, 560,
+    );
+    horizon.addColorStop(0, DAWN.tintFar);
+    horizon.addColorStop(0.45, DAWN.tint);
+    horizon.addColorStop(1, 'rgba(255,157,92,0)');
+    ctx.save();
+    ctx.globalAlpha = dawn * 0.34;
+    ctx.fillStyle = horizon;
+    ctx.fillRect(0, 120, FIELD.width, FIELD.height - 120);
+    ctx.restore();
+  }
   // A pale moon high to the right, mostly halo: dawn's promise, far off.
   const moonGlow = ctx.createRadialGradient(828, 84, 6, 828, 84, 195);
   moonGlow.addColorStop(0, 'rgba(207,220,255,0.20)');
@@ -172,6 +245,10 @@ function drawBackground(ctx, time) {
     ctx.fillRect(speck.x, speck.y, speck.size, speck.size);
   }
   ctx.globalAlpha = 1;
+  // The ruined towers stand on the far ridge: draw them first, then let
+  // the ridge fill swallow their feet so they sit IN the land.
+  ctx.fillStyle = '#0d0a26';
+  for (const tower of TOWERS) drawTower(ctx, tower, farRidgeY(tower.x + tower.width / 2) + 6);
   // The Hollow's rim: a far ridge, then a near one with its pines.
   ctx.fillStyle = '#0e0b28';
   ctx.beginPath();
@@ -195,6 +272,18 @@ function drawBackground(ctx, time) {
     ctx.lineTo(pine.x - pine.width / 2, base);
     ctx.closePath();
     ctx.fill();
+  }
+  // Fog: three wide drifts sliding on their own clocks, softest at their
+  // edges. They cross the towers and the ridges but never the fight —
+  // everything that can hurt the Spark is drawn over them.
+  for (const band of FOG_BANDS) {
+    const shift = Math.sin(time * band.pace * 6 + band.phase) * 130;
+    const fog = ctx.createLinearGradient(0, band.y - band.height / 2, 0, band.y + band.height / 2);
+    fog.addColorStop(0, `rgba(${DAWN.fog},0)`);
+    fog.addColorStop(0.5, `rgba(${DAWN.fog},${band.alpha})`);
+    fog.addColorStop(1, `rgba(${DAWN.fog},0)`);
+    ctx.fillStyle = fog;
+    ctx.fillRect(-140 + shift * 0.4, band.y - band.height / 2, FIELD.width + 280, band.height);
   }
   for (const mote of MOTES) {
     const x = mote.x + Math.sin(time * 0.24 + mote.phase) * mote.drift;
@@ -267,6 +356,37 @@ function drawFoe(ctx, foe, time) {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+  if (foe.kind === 'wraith') {
+    // Afterimages: two pale ghosts strung out behind the wraith along its
+    // velocity, so its lunge reads as a blur of motion, not a teleport.
+    for (let ghost = 2; ghost >= 1; ghost -= 1) {
+      const gx = foe.x - foe.vx * 0.055 * ghost;
+      const gy = foe.y - foe.vy * 0.055 * ghost;
+      ctx.globalAlpha = 0.13 * (3 - ghost);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(gx, gy, foe.radius * (1 - ghost * 0.18), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (foe.kind === 'shade') {
+    // A ribbon of the crescent's own hue trailing its weave, so the sine
+    // path it flies is drawn on the field behind it.
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.22;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    for (let stepIndex = 0; stepIndex <= 6; stepIndex += 1) {
+      const back = stepIndex * 0.045;
+      const px = foe.x - foe.vx * back + Math.sin(time * 7 - stepIndex * 0.9 + foe.phase) * 3;
+      const py = foe.y - foe.vy * back + Math.cos(time * 6.3 - stepIndex * 0.8 + foe.phase) * 3;
+      if (stepIndex === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   ctx.translate(foe.x, foe.y);
   if (foe.kind === 'gloom') {
     ctx.fillStyle = color;
@@ -288,6 +408,13 @@ function drawFoe(ctx, foe, time) {
     ctx.beginPath();
     ctx.arc(0, 0, foe.radius * 0.52, 0, Math.PI * 2);
     ctx.fill();
+    // A slow swirl turning inside the gloom, like something dreaming.
+    ctx.strokeStyle = 'rgba(233,220,255,0.5)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    const swirl = time * 1.8 + foe.phase;
+    ctx.arc(0, 0, foe.radius * 0.34, swirl, swirl + Math.PI * 1.25);
+    ctx.stroke();
     ctx.fillStyle = '#e9dcff';
     ctx.beginPath();
     ctx.arc(-4.5, -2, 2.1, 0, Math.PI * 2);
@@ -317,6 +444,14 @@ function drawFoe(ctx, foe, time) {
     ctx.beginPath();
     ctx.arc(0, 0, foe.radius * 0.34 * pulse, 0, Math.PI * 2);
     ctx.fill();
+    // Spores in slow orbit: the pod is pregnant, and the drawing says so.
+    ctx.fillStyle = 'rgba(217,255,176,0.75)';
+    for (let index = 0; index < 3; index += 1) {
+      const orbit = time * 1.6 + foe.phase + index * (Math.PI * 2 / 3);
+      ctx.beginPath();
+      ctx.arc(Math.cos(orbit) * foe.radius * 1.06, Math.sin(orbit) * foe.radius * 1.06, 1.7, 0, Math.PI * 2);
+      ctx.fill();
+    }
   } else if (foe.kind === 'husk') {
     ctx.strokeStyle = color;
     ctx.lineWidth = 7;
@@ -337,6 +472,40 @@ function drawFoe(ctx, foe, time) {
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(0, 0, foe.radius * 0.3 * (1 + Math.sin(time * 3 + foe.phase) * 0.12), 0, Math.PI * 2);
+    ctx.fill();
+    if (foe.hp < foe.maxHp) {
+      // Cracks in the armour, one more for every two hits it has taken:
+      // the husk's remaining health is readable from across the field.
+      const cracks = Math.min(3, Math.ceil((foe.maxHp - foe.hp) / 2));
+      ctx.strokeStyle = 'rgba(4,20,14,0.85)';
+      ctx.lineWidth = 1.8;
+      for (let index = 0; index < cracks; index += 1) {
+        const angle = foe.phase + index * 2.2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle) * foe.radius * 0.3, Math.sin(angle) * foe.radius * 0.3);
+        ctx.lineTo(Math.cos(angle + 0.35) * foe.radius * 0.66, Math.sin(angle + 0.35) * foe.radius * 0.66);
+        ctx.lineTo(Math.cos(angle + 0.1) * foe.radius * 0.97, Math.sin(angle + 0.1) * foe.radius * 0.97);
+        ctx.stroke();
+      }
+    }
+  } else if (foe.kind === 'shade') {
+    // A crescent: a bright disc with the night bitten out of it, tilted
+    // along its weave so it seems to swim. Two star-bright eyes sit in the
+    // bite — the shade watches the Spark as it comes.
+    const tilt = Math.sin(time * 3.4 + foe.phase) * 0.5;
+    ctx.rotate(tilt);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, foe.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#160a24';
+    ctx.beginPath();
+    ctx.arc(foe.radius * 0.52, -foe.radius * 0.22, foe.radius * 0.82, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffe9f8';
+    ctx.beginPath();
+    ctx.arc(-foe.radius * 0.34, -foe.radius * 0.1, 1.9, 0, Math.PI * 2);
+    ctx.arc(-foe.radius * 0.05, foe.radius * 0.28, 1.6, 0, Math.PI * 2);
     ctx.fill();
   } else if (foe.kind === 'wraith') {
     const angle = Math.atan2(foe.vy, foe.vx);
@@ -387,6 +556,16 @@ function drawSpark(ctx, spark, time) {
   ctx.beginPath();
   ctx.arc(spark.x, spark.y, glowRadius, 0, Math.PI * 2);
   ctx.fill();
+  // A hairline halo at the edge of the glow, breathing with the flicker:
+  // it gives the light a rim, so the flame reads as a lantern in the dark
+  // rather than a smudge of light.
+  ctx.globalAlpha = blink ? 0.1 : 0.16;
+  ctx.strokeStyle = '#ffd97a';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(spark.x, spark.y, glowRadius * 0.82, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = blink ? 0.35 : 1;
   const angle = Math.atan2(spark.aimY - spark.y, spark.aimX - spark.x);
   ctx.strokeStyle = PALETTE.ember;
   ctx.lineWidth = 3;
@@ -447,6 +626,16 @@ function drawEffects(ctx, fx) {
       ctx.lineWidth = p.width * fade + 0.5;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (p.streak) {
+      // A streak: a short bright line along the particle's own motion,
+      // for nova shrapnel and the fastest burst sparks.
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = Math.max(0.6, p.size * 0.5 * fade);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x - p.vx * 0.045, p.y - p.vy * 0.045);
+      ctx.lineTo(p.x, p.y);
       ctx.stroke();
     } else {
       ctx.fillStyle = p.color;
@@ -684,6 +873,26 @@ function drawTitle(ctx, world, ui) {
 function drawEndScreen(ctx, world, ui, won) {
   veil(ctx, won ? 0.35 : 0.55);
   const cx = FIELD.width / 2;
+  if (won) {
+    // The sunrise the whole game promised: a sun disc on the centre
+    // horizon, breathing slowly, with the sky warming out from it. The
+    // field behind is the wave-ten field at full dawn; this is the same
+    // light, closer.
+    const horizonY = FIELD.height * 0.94;
+    const sunGlow = ctx.createRadialGradient(cx, horizonY, 8, cx, horizonY, 340);
+    sunGlow.addColorStop(0, 'rgba(255,205,120,0.5)');
+    sunGlow.addColorStop(0.4, 'rgba(255,140,80,0.18)');
+    sunGlow.addColorStop(1, 'rgba(255,140,80,0)');
+    ctx.fillStyle = sunGlow;
+    ctx.fillRect(cx - 340, horizonY - 340, 680, 680);
+    const breathe = 1 + Math.sin(ui.time * 1.4) * 0.03;
+    ctx.fillStyle = DAWN.sun;
+    ctx.beginPath();
+    ctx.arc(cx, horizonY, 26 * breathe, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,157,92,0.35)';
+    ctx.fillRect(cx - 190, horizonY - 1.5, 380, 3);
+  }
   // The air after the end: embers rise into the dawn, or ash sifts down.
   for (const mote of END_MOTES) {
     const span = FIELD.height + 40;
@@ -725,7 +934,10 @@ function drawEndScreen(ctx, world, ui, won) {
 /** Draw the whole frame: world, darkness, HUD, then the active screen. */
 export function render(ctx, world, screen, ui) {
   const time = ui.time;
-  drawBackground(ctx, time);
+  // How far the night has turned toward morning: the wave's share of the
+  // road to dawn, and full dawn once the run is won.
+  const dawn = world.won ? 1 : Math.min(1, (world.wave - 1) / (DAWN_WAVE - 1));
+  drawBackground(ctx, time, dawn);
   for (const pickup of world.pickups) drawDew(ctx, pickup, time);
   for (const foe of world.foes) drawFoe(ctx, foe, time);
   drawSpark(ctx, world.spark, time);

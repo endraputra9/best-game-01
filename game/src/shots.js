@@ -1,9 +1,10 @@
-// Screenshot scenes behind ?shot=start|play|end|win. Each scene steps the
-// real simulation forward from a fresh run at a fixed step, steered by a
-// pilot: a careful one for the play and win scenes (it aims, kites and
+// Screenshot scenes behind ?shot=start|play|end|win|nova. Each scene steps
+// the real simulation forward from a fresh run at a fixed step, steered by
+// a pilot: a careful one for the play and win scenes (it aims, kites and
 // gathers dew, as a decent player does), a doomed one for the end scene (it
-// flies at the brood and never fires), and a drifting one behind the title.
-// Same seed, same frame.
+// flies at the brood and never fires), a patient one for the nova scene
+// (it hoards its charge until the crowd is thick, then lets go), and a
+// drifting one behind the title. Same seed, same frame.
 
 import { FIELD, NOVA, STEP } from './config.js';
 import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
@@ -47,8 +48,13 @@ function ambientControl(state) {
   };
 }
 
-/** A control record that plays to live: kite the brood, hunt dew, fire. */
-function combatControl(state) {
+/**
+ * A control record that plays to live: kite the brood, hunt dew, fire.
+ * `novaCrowd` is how many foes must be inside the nova's reach before the
+ * pilot spends its charge: 3 for a working pilot, more for a patient one
+ * saving the burst for the screenshot.
+ */
+function combatControl(state, novaCrowd = 3) {
   const spark = state.spark;
   let moveX = (FIELD.width / 2 - spark.x) * 0.004;
   let moveY = (FIELD.height / 2 - spark.y) * 0.004;
@@ -98,7 +104,7 @@ function combatControl(state) {
     aimX,
     aimY,
     firing,
-    nova: spark.charge >= NOVA.cost && crowded >= 3,
+    nova: spark.charge >= NOVA.cost && crowded >= novaCrowd,
   };
 }
 
@@ -118,13 +124,55 @@ function doomedControl(state) {
 }
 
 /**
- * Set `world` to the named scene (start, play or end; any other name is
- * start) and return the screen to draw over it and the score to show as best.
+ * name is start) and return the screen to draw over it and the score to
+ * show as best: see stageShot below.
  */
+/**
+ * A control record for the nova scene: play like the careful pilot while
+ * the charge builds. Once it is full, bait the brood: keep kiting until
+ * three foes are inside the nova's reach, then simply STOP — every foe on
+ * the field is already steering at the Spark, so the crowd gathers itself
+ * — and loose the nova the moment five are in reach, a heartbeat before
+ * the first of them can touch the flame. A working pilot would never do
+ * this; a portrait sometimes has to be arranged.
+ */
+function novaControl(state) {
+  const spark = state.spark;
+  const base = combatControl(state, Number.POSITIVE_INFINITY);
+  if (spark.charge < NOVA.cost) return base;
+  let crowded = 0;
+  for (const foe of state.foes) {
+    if (Math.hypot(foe.x - spark.x, foe.y - spark.y) < NOVA.radius) crowded += 1;
+  }
+  if (crowded >= 5) return { ...base, nova: true };
+  if (crowded >= 3) return { ...base, moveX: 0, moveY: 0 };
+  return base;
+}
+
+/** Stage the named scene on `world` and say which screen to draw over it. */
 export function stageShot(name, world) {
+  if (name === 'nova') {
+    // The still is taken a heartbeat after the burst: twin rings still
+    // expanding, shrapnel in the air, the brood flashing white inside the
+    // blast and survivors still closing in around the edge of it. If the
+    // run somehow ends before a nova ever fires, the scene falls back to
+    // whatever frame the run died on.
+    const limit = Math.round(600 / STEP);
+    let after = -1;
+    for (let index = 0; index < limit && !world.over; index += 1) {
+      const charged = world.spark.charge >= NOVA.cost;
+      world.step(STEP, novaControl(world));
+      if (after < 0 && charged && world.spark.charge < NOVA.cost) after = 0;
+      if (after >= 0) {
+        after += 1;
+        if (after >= 7) break;
+      }
+    }
+    return { screen: world.over && !world.won ? SCREEN_OVER : SCREEN_PLAY, best: world.score };
+  }
   if (name === 'play') {
     // Play properly, then hold on the first frame where the fight is up
-    // close and varied: a crowd on the field with more than one kind in it,
+    // close and varied: a crowd on the field with three kinds in it,
     // a stream of bolts in the air, foes well inside the Spark's light,
     // juice in the air (a burst or a score popup), and light enough left
     // that the scene glows rather than gutters.
@@ -141,7 +189,7 @@ export function stageShot(name, world) {
       }
       const juicy = world.fx.particles.length >= 5 || world.fx.texts.length >= 1;
       if (world.foes.length >= 7 && world.bolts.length >= 4 && upClose >= 2
-        && kinds.size >= 2 && world.spark.light >= 35 && juicy) break;
+        && kinds.size >= 3 && world.spark.light >= 35 && juicy) break;
     }
     return { screen: world.over ? SCREEN_OVER : SCREEN_PLAY, best: world.score };
   }

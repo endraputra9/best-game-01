@@ -34,6 +34,7 @@ export function looseNova(state) {
   spark.chargeWasFull = false;
   state.fx.ring(spark.x, spark.y, '#ffe9a8', NOVA.radius, 0.5, 6);
   state.fx.ring(spark.x, spark.y, '#ff9d5c', NOVA.radius * 0.7, 0.4, 4);
+  state.fx.shrapnel(spark.x, spark.y, '#ffd97a', 16, 430);
   state.fx.kick(0.55);
   state.events.push({ type: 'nova' });
   for (const foe of state.foes) {
