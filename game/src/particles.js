@@ -34,8 +34,32 @@ export class Effects {
       drag: options.drag ?? 2.2,
       color: options.color ?? '#ffd97a',
       ring: options.ring ?? false,
+      streak: options.streak ?? false,
       width: options.width ?? 3,
     });
+  }
+
+  /**
+   * A fan of streaking shrapnel: fewer, faster, longer-lived than a burst,
+   * drawn as lines along their motion. For the deaths that should feel
+   * violent — husks cracking open, the nova's edge.
+   */
+  shrapnel(x, y, color, count, speed) {
+    for (let index = 0; index < count; index += 1) {
+      const angle = this.rng() * Math.PI * 2;
+      const pace = speed * (0.5 + this.rng() * 0.9);
+      this.spawn({
+        x,
+        y,
+        vx: Math.cos(angle) * pace,
+        vy: Math.sin(angle) * pace,
+        life: 0.4 + this.rng() * 0.35,
+        size: 3,
+        drag: 1.4,
+        color,
+        streak: true,
+      });
+    }
   }
 
   /** A radial burst of `count` sparks in `color` around a point. */

@@ -1,8 +1,9 @@
 // Sparkhollow's entry point: owns the canvas and its letterboxed view, the
 // screen state machine (title, play, pause, dawn, darkness), the fixed-step
 // loop, and the translation of world events into sound. With ?shot=start,
-// ?shot=play or ?shot=end it instead stages one deterministic scene from
-// shots.js and holds it, which is how the entry's screenshots are taken.
+// ?shot=play, ?shot=end, ?shot=win or ?shot=nova it instead stages one
+// deterministic scene from shots.js and holds it, which is how the entry's
+// screenshots are taken.
 
 import { FIELD, STEP } from './config.js';
 import { Input } from './input.js';
